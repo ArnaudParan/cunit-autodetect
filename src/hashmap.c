@@ -9,7 +9,7 @@ unsigned int HM_djb2(const char *name) {
     unsigned long hash = 5381;
     unsigned int c;
 
-    while (c = (unsigned int) (*name++))
+    while ((c = (unsigned int) (*name++)) != 0)
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
 
     return hash;
@@ -19,7 +19,7 @@ unsigned int HM_sdbm(const char *name) {
     unsigned long hash = 0;
     unsigned int c;
 
-    while (c = (unsigned int) (*name++))
+    while ((c = (unsigned int) (*name++)) != 0)
         hash = c + (hash << 6) + (hash << 16) - hash;
 
     return hash;
@@ -29,7 +29,7 @@ unsigned int HM_lose_lose(const char *name) {
     unsigned int hash = 0;
     unsigned int c;
 
-    while (c = (unsigned int) (*name++))
+    while ((c = (unsigned int) (*name++)) != 0)
         hash += c;
 
     return hash;
@@ -66,7 +66,6 @@ void HM_clear(struct HashMap *hm) {
 void HM_free(struct HashMap *hm) {
     HM_clear(hm);
     free(hm->buckets);
-    free(hm);
 }
 
 void HM_set(struct HashMap *hm, const char *name, void *val) {
@@ -142,18 +141,19 @@ void HM_fprintf_mem(FILE *stream, const struct HashMap *hm) {
 }
 
 void HM_recompute(struct HashMap *hm, unsigned int (*hash_function)(const char*), size_t max_hash) {
-    struct _hashmapelem **buckets = calloc(max_hash, sizeof(struct _hashmapelem*));
-    struct _hashmapelem *it = NULL, *it_inner = NULL;
-    unsigned int hash;
+    struct HashMap hmr;
+    struct _hashmapelem *it = NULL;
     size_t i;
+
+    HM_init(&hmr, hash_function, max_hash);
 
     for (i = 0; i < hm->n_buckets; i++) {
         for (it = hm->buckets[i]; it != NULL; it = it->next) {
-            //TODO add in the new map
-            //TODO delete from old buckets while keeping integrity
-            hash = hash_function(it->name) % max_hash;
-            // it->next = buckets[hash]
-            // buckets[hash] = it;
+            HM_set(&hmr, it->name, it->val);
         }
     }
+
+    HM_free(hm);
+
+    *hm = hmr;
 }

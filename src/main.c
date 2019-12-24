@@ -1,10 +1,23 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include "lists.h"
 #include "hashmap.h"
 
 #define BUFSIZE 1024
+
+#define HELP_MESSAGE\
+    "Autodetect CUnit tests\n"\
+    "\n"\
+    "Just give the path to the .h files with the tests inside to the command\n"\
+    "\n"\
+    "Inside of those files you can use the following macros:\n"\
+    "    __test__init__(\"suite name\")\n"\
+    "    __test__clean__(\"suite name\")\n"\
+    "    __test__set_up__(\"suite name\")\n"\
+    "    __test__tear_down__(\"suite name\")\n"\
+    "    __test__case__(\"suite name\", \"test name\")\n"
 
 struct TestSuite {
     char *init;
@@ -48,6 +61,7 @@ void free_test_suite(struct TestSuite *suite) {
 
 void parse_file(FILE *f, const char *filename, struct HashMap *suites) {
     // TODO handle before command for a__test_init__ not to trigger
+    // TODO handle multiple commands
     char buff[BUFSIZE];
     char pref[] = "__test_";
     char *macros[] = {
@@ -57,12 +71,22 @@ void parse_file(FILE *f, const char *filename, struct HashMap *suites) {
         "__test_set_up__",
         "__test_tear_down__",
     };
-    char escaped = 0, pos, command;
-    size_t line = 1, col = 1;
+
+    char escaped = 0, pos;
+    int command;
     struct Queue *params = NULL;
     struct TestSuite *suite_data = NULL;
-    size_t i, j, param_length = 1024, fname_length = 1024, n_brackets;
-    char *fname = NULL, *suite_name = NULL, *test_name = NULL, *param = NULL;
+    size_t i,
+           j,
+           line = 1,
+           col = 1,
+           param_length = 1024,
+           fname_length = 1024,
+           n_brackets;
+    char *fname = NULL,
+         *suite_name = NULL,
+         *test_name = NULL,
+         *param = NULL;
 
     pos = BEFORE_COMMAND;
     while (fgets(buff, BUFSIZE, f) != NULL) {
@@ -322,7 +346,7 @@ eos:
                                 HM_set(&suite_data->tests, test_name, fname);
                             }
                             else {
-                                fprintf(stderr, "%s:%d Error, test name \"%s\"", fname, line, test_name);
+                                fprintf(stderr, "%s:%zu Error, test name \"%s\"\n", fname, line, test_name);
                             }
                             break;
                     }
@@ -393,35 +417,59 @@ void print_summary(FILE *f, struct HashMap *suites) {
     fprintf(stdout, "}\n");
 }
 
+void parse_arguments(int argc, char *argv[], struct Queue **fnames) {
+    int i, j;
+    char help = 0;
+    for (i = 0; i < argc; ++i) {
+        if (argv[i][0] == '-') {
+            // long argument
+            if (argv[i][1] == '-') {
+                if (strcmp(argv[i], "--help") == 0)
+                    help = 1;
+                else
+                    fprintf(stderr, "Error unrecognized long argument \"%s\"\n", argv[i]);
+            }
+            // short arguments
+            else {
+                for (j = 1; argv[i][j] != '\0'; ++j) {
+                    if (argv[i][j] == 'h')
+                        help = 1;
+                    else
+                        fprintf(stderr, "Error unrecognized short argument \'%c\'\n", argv[i][j]);
+                }
+            }
+        }
+        else {
+            Queue_push(fnames, argv[i]);
+        }
+    }
+
+    if (help) {
+        fprintf(stderr, HELP_MESSAGE);
+        exit(0);
+    }
+}
+
 int main(int argc, char *argv[]) {
-    // TODO handle command line arugments
-    fd_set set;
-    struct timeval timeout = {0, 0};
     FILE *f;
     struct HashMap suites;
     struct Queue *files = NULL;
-    char *buf;
+    char *fname;
+    struct Queue *fnames = NULL;
 
-    FD_ZERO(&set);
-    FD_SET(STDIN_FILENO, &set);
+    parse_arguments(argc, argv, &fnames);
 
     HM_init(&suites, NULL, 0);
 
-    // reading input pipe
-    if (select(FD_SETSIZE, &set, NULL, NULL, &timeout) != 0) {
-        parse_file(stdin, "stdin", &suites);
-    }
-
-    char i;
-    for (i = 1; i < argc; ++i) {
-        f = fopen(argv[i], "r");
-        parse_file(f, argv[i], &suites);
+    while ((fname = Queue_pop(&fnames)) != NULL) {
+        f = fopen(fname, "r");
+        parse_file(f, fname, &suites);
         fclose(f);
-        Queue_push(&files, argv[i]);
+        Queue_push(&files, fname);
     }
 
-    while ((buf = Queue_pop(&files)) != NULL) {
-        fprintf(stdout, "#include \"%s\"\n", buf);
+    while ((fname = Queue_pop(&files)) != NULL) {
+        fprintf(stdout, "#include \"%s\"\n", fname);
     }
     fprintf(stdout, "\n");
 
