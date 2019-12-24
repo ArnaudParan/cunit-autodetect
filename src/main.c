@@ -420,7 +420,7 @@ void print_summary(FILE *f, struct HashMap *suites) {
 void parse_arguments(int argc, char *argv[], struct Queue **fnames) {
     int i, j;
     char help = 0;
-    for (i = 0; i < argc; ++i) {
+    for (i = 1; i < argc; ++i) {
         if (argv[i][0] == '-') {
             // long argument
             if (argv[i][1] == '-') {
